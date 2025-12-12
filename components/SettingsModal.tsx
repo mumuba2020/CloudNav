@@ -327,7 +327,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 });`;
 
   const renderCodeBlock = (filename: string, code: string) => (
-    <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+    <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden shrink-0">
         <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-700/50 px-3 py-2 border-b border-slate-200 dark:border-slate-700">
             <span className="text-xs font-mono font-medium text-slate-600 dark:text-slate-300">{filename}</span>
             <button 
@@ -381,7 +381,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden border border-slate-200 dark:border-slate-700 flex max-h-[90vh] flex-col md:flex-row">
         
         {/* Sidebar */}
-        <div className="w-full md:w-48 bg-slate-50 dark:bg-slate-800/50 border-r border-slate-200 dark:border-slate-700 flex flex-row md:flex-col p-2 gap-1 overflow-x-auto">
+        <div className="w-full md:w-48 bg-slate-50 dark:bg-slate-800/50 border-r border-slate-200 dark:border-slate-700 flex flex-row md:flex-col p-2 gap-1 overflow-x-auto shrink-0">
             {tabs.map(tab => (
                 <button
                     key={tab.id}
@@ -399,7 +399,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         </div>
 
         {/* Content */}
-        <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden bg-white dark:bg-slate-800">
              <div className="flex justify-between items-center p-4 border-b border-slate-200 dark:border-slate-700 shrink-0">
                 <h3 className="text-lg font-semibold dark:text-white">设置</h3>
                 <button onClick={onClose} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-colors">
@@ -407,7 +407,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </button>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto p-6 pb-12">
                 
                 {/* 1. Site Settings */}
                 {activeTab === 'site' && (
