@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, Save, Bot, Key, Globe, Sparkles, PauseCircle, Wrench, Box, Copy, Check, List, GripVertical, Filter, LayoutTemplate, RefreshCw, Info, Download, Sidebar, Keyboard, MousePointerClick } from 'lucide-react';
+import { X, Save, Bot, Key, Globe, Sparkles, PauseCircle, Wrench, Box, Copy, Check, List, GripVertical, Filter, LayoutTemplate, RefreshCw, Info, Download, Sidebar, Keyboard, MousePointerClick, AlertTriangle, Package } from 'lucide-react';
 import { AIConfig, LinkItem, Category, SiteSettings } from '../types';
 import { generateLinkDescription } from '../services/geminiService';
+import JSZip from 'jszip';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -73,6 +74,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [password, setPassword] = useState('');
   const [domain, setDomain] = useState('');
   const [browserType, setBrowserType] = useState<'chrome' | 'firefox'>('chrome');
+  const [isZipping, setIsZipping] = useState(false);
   
   // Link Management State
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -111,6 +113,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       }
 
       setIsProcessing(false);
+      setIsZipping(false);
       setProgress({ current: 0, total: 0 });
       shouldStopRef.current = false;
       setDomain(window.location.origin);
@@ -230,14 +233,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     const json: any = {
         manifest_version: 3,
         name: localSiteSettings.navTitle || "CloudNav Assistant",
-        version: "1.4",
+        version: "1.5", // Incremented version to force update
+        description: "CloudNav 侧边栏导航与书签助手",
         permissions: ["activeTab", "scripting", "sidePanel", "storage", "favicon", "contextMenus"],
         background: {
             service_worker: "background.js"
         },
         action: {
             default_popup: "popup.html",
-            default_title: `Save to ${localSiteSettings.navTitle || 'CloudNav'}`
+            default_title: "保存到 CloudNav"
         },
         side_panel: {
             default_path: "sidebar.html"
@@ -251,7 +255,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               "default": "Ctrl+Shift+E",
               "mac": "Command+Shift+E"
             },
-            "description": "Open Side Panel"
+            "description": "打开/关闭侧边栏 (Toggle Side Panel)"
           }
         }
     };
@@ -268,10 +272,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     return JSON.stringify(json, null, 2);
   };
 
-  const extBackgroundJs = `// background.js - Handles Context Menus and Lifecycle
+  const extBackgroundJs = `// background.js - Handles Context Menus
 
+// 初始化上下文菜单
 chrome.runtime.onInstalled.addListener(() => {
-  // Create a context menu item to open the side panel
   chrome.contextMenus.create({
     id: 'openSidePanel',
     title: '打开侧边栏 (Open Side Panel)',
@@ -279,15 +283,23 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
+// 监听菜单点击
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === 'openSidePanel') {
-    // Open the side panel in the current window
+    // 强制在当前窗口打开侧边栏
+    // 注意: Chrome API 目前仅支持 "open"，不支持通过 API "close" 或 "toggle"
+    // 用户必须使用快捷键 Ctrl+Shift+E 来进行切换(关闭)
     chrome.sidePanel.open({ windowId: tab.windowId });
   }
 });
 
-// Note: The keyboard shortcut defined in manifest (_execute_side_panel) 
-// handles the toggle natively in Chrome.
+// 监听快捷键 (可选，_execute_side_panel 通常由浏览器直接处理，不需要此监听，但为了兼容性保留)
+chrome.commands.onCommand.addListener((command) => {
+  if (command === '_execute_side_panel') {
+    // 这里的代码可能不会执行，因为 _execute_side_panel 是系统保留动作
+    console.log('Toggle Side Panel Command');
+  }
+});
 `;
 
   const extPopupHtml = `<!DOCTYPE html>
@@ -726,9 +738,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     </div>
   );
 
-  const handleDownloadIcon = async () => {
+  const generateIconBlob = async (): Promise<Blob | null> => {
      const iconUrl = localSiteSettings.favicon;
-     if (!iconUrl) return;
+     if (!iconUrl) return null;
 
      try {
          const img = new Image();
@@ -748,25 +760,72 @@ document.addEventListener('DOMContentLoaded', async () => {
 
          ctx.drawImage(img, 0, 0, 128, 128);
 
-         canvas.toBlob((blob) => {
-             if (!blob) {
-                 alert("生成图片失败");
-                 return;
-             }
-             const url = window.URL.createObjectURL(blob);
-             const a = document.createElement('a');
-             a.href = url;
-             a.download = "icon.png";
-             document.body.appendChild(a);
-             a.click();
-             document.body.removeChild(a);
-             window.URL.revokeObjectURL(url);
-         }, 'image/png');
+         return new Promise((resolve) => {
+             canvas.toBlob((blob) => {
+                 resolve(blob);
+             }, 'image/png');
+         });
 
      } catch (e) {
          console.error(e);
-         alert("自动转换 PNG 失败 (可能是跨域限制)。\n\n请尝试右键点击下方的预览图片，选择 '图片另存为...' 保存。");
+         return null;
      }
+  };
+
+  const handleDownloadIcon = async () => {
+    const blob = await generateIconBlob();
+    if (!blob) {
+        alert("生成图片失败 (可能是跨域限制)。\n\n请尝试右键点击下方的预览图片，选择 '图片另存为...' 保存。");
+        return;
+    }
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = "icon.png";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadZip = async () => {
+    setIsZipping(true);
+    try {
+        const zip = new JSZip();
+        
+        // Files
+        zip.file("manifest.json", getManifestJson());
+        zip.file("background.js", extBackgroundJs);
+        zip.file("popup.html", extPopupHtml);
+        zip.file("popup.js", extPopupJs);
+        zip.file("sidebar.html", extSidebarHtml);
+        zip.file("sidebar.js", extSidebarJs);
+        
+        // Icon
+        const iconBlob = await generateIconBlob();
+        if (iconBlob) {
+            zip.file("icon.png", iconBlob);
+        } else {
+            console.warn("Could not generate icon for zip");
+            zip.file("icon_missing.txt", "Icon generation failed due to CORS. Please save the icon manually.");
+        }
+
+        const content = await zip.generateAsync({ type: "blob" });
+        const url = window.URL.createObjectURL(content);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = "CloudNav-Ext.zip";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        
+    } catch(e) {
+        console.error(e);
+        alert("打包下载失败");
+    } finally {
+        setIsZipping(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -1090,13 +1149,30 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         )}。
                                     </li>
                                     <li>点击 "<strong>加载已解压的扩展程序</strong>"，选择该文件夹。</li>
+                                    {browserType === 'chrome' && <li><strong>重要:</strong> 如果之前已安装，请先点击 "移除" 或 "刷新" 按钮，并重新加载文件夹以确保 shortcuts 配置生效。</li>}
                                 </ol>
                                 
-                                <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200 rounded border border-amber-200 dark:border-amber-900/50 text-sm space-y-2">
-                                    <div className="font-bold flex items-center gap-2"><Keyboard size={16}/> 快捷键 Ctrl+Shift+E 设置指南:</div>
-                                    <p>如果按下快捷键打开的是“保存弹窗”而不是“侧边栏”，请前往 Chrome 快捷键设置 (<code className="bg-white/50 dark:bg-black/20 px-1 rounded">chrome://extensions/shortcuts</code>) 检查。</p>
-                                    <p>务必将快捷键绑定到 <strong>"Open Side Panel (打开侧边栏)"</strong> 这一项，而不是 "激活扩展程序"。</p>
-                                    <div className="text-xs text-slate-500 mt-2">提示：现在您也可以在网页上 <strong>右键 &rarr; 打开侧边栏</strong>。</div>
+                                <div className="mt-4 mb-4">
+                                    <button 
+                                        onClick={handleDownloadZip}
+                                        disabled={isZipping}
+                                        className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-70 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-lg shadow-blue-500/20"
+                                    >
+                                        <Package size={20} />
+                                        {isZipping ? '打包中...' : '📦 一键下载所有文件 (.zip)'}
+                                    </button>
+                                </div>
+                                
+                                <div className="p-3 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200 rounded border border-amber-200 dark:border-amber-900/50 text-sm space-y-2">
+                                    <div className="font-bold flex items-center gap-2"><Keyboard size={16}/> 快捷键 Ctrl+Shift+E 设置:</div>
+                                    <p>如果快捷键未生效，请前往 Chrome 快捷键设置 (<code className="bg-white/50 dark:bg-black/20 px-1 rounded">chrome://extensions/shortcuts</code>) 检查。</p>
+                                    <p>务必将快捷键绑定到 <strong>"打开/关闭侧边栏 (Toggle Side Panel)"</strong>。</p>
+                                    
+                                    <div className="mt-2 pt-2 border-t border-amber-200 dark:border-amber-800/50 text-xs flex flex-col gap-1">
+                                        <div className="font-bold flex items-center gap-1"><AlertTriangle size={12}/> 右键菜单说明:</div>
+                                        <p>右键菜单 "打开侧边栏" 受浏览器限制，<strong>只能打开，不能关闭</strong>。</p>
+                                        <p>想要<strong>切换(关闭)</strong>侧边栏，请使用快捷键 <strong>Ctrl+Shift+E</strong>。</p>
+                                    </div>
                                 </div>
                             </div>
 
